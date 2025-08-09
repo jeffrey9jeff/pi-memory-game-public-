@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pi Memory Game (Web)</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#ffffff">
 <!-- Pi favicon (SVG data URI) -->
 <link rel="icon" href='data:image/svg+xml;utf8,<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="white"/><text x="50%" y="54%" text-anchor="middle" font-size="44" font-family="Segoe UI, Arial, sans-serif">π</text></svg>' />
 <style>
@@ -417,6 +419,14 @@
   render();
   elEntry.focus();
 })();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js")
+      .catch(console.error);
+  });
+}
 </script>
 </body>
 </html>
