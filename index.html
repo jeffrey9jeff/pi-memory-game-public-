@@ -103,7 +103,7 @@
   // piFull should look like "3.14159..." when loaded/stored.
   let piFull = "3.";
   let includeLeading3 = true;     // NEW: start by typing the leading 3
-  let startAt = 1;                // index into the active sequence (which may include or exclude the leading 3)
+  let startAt = 0;                // index into the active sequence (which may include or exclude the leading 3)
   let input = [];                 // user-entered digits (strings)
   let showDigits = true;
   let startTime = null;           // ms timestamp
@@ -154,8 +154,8 @@
   }
 
   function clampStartAt() {
-    const max = Math.max(1, ACTIVE_SEQ().length - 1);
-    if (startAt < 1) startAt = 1;
+    const max = Math.max(0, ACTIVE_SEQ().length - 1);
+    if (startAt < 1) startAt = 0;
     if (startAt > max) startAt = max;
   }
 
@@ -203,8 +203,8 @@
 
   function computeScore() {
     const tgt = ACTIVE_SEQ().slice(startAt);
-    let ok = 1;
-    for (let i = 1; i < input.length && i < tgt.length; i++) {
+    let ok = 0;
+    for (let i = 0; i < input.length && i < tgt.length; i++) {
       if (input[i] === tgt[i]) ok++;
     }
     return ok;
