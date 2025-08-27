@@ -101,21 +101,20 @@
 <script>
 (() => {
   // --------- State ----------
-  // piFull should look like "3.14159..." when loaded/stored.
+  // Stored format: "3.14159..." (leading 3 + dot + decimals)
   let piFull = "3.";
-  let includeLeading3 = true;     // NEW: start by typing the leading 3
-  let startAt = 0;                // index into the active sequence (which may include or exclude the leading 3)
-  let input = [];                 // user-entered digits (strings)
+  let includeLeading3 = true; // if true, position 1 == "3"
+  let startAt = 0;            // 0-based index into ACTIVE_SEQ()
+  let input = [];
   let showDigits = true;
-  let startTime = null;           // ms timestamp
-  let elapsed = 0;                // seconds
+  let startTime = null;
+  let elapsed = 0;
   let timerHandle = null;
 
   const MAX_PER_LINE = 100;
   const SPACE_EVERY = 10;
   const MAX_LEAD = 10;
 
-  // bumped storage version due to logic change
   const STORAGE_KEYS = {
     SAVE: "piweb_save_v2",
     LB:   "piweb_leaderboard_v1",
@@ -143,41 +142,25 @@
   const elGhUrl   = document.getElementById('ghUrl');
 
   // --------- Helpers ----------
-  // Digits-only string: "3" + digits after decimal (dot removed entirely)
-  const getDigitsOnly = () => piFull.replace(/\D/g, ""); // strips dot and any whitespace just in case
+  // Make positions 1-based for UI: pos 1 = index 0
+  const seqLen = () => ACTIVE_SEQ().length;
+  const posToIndex = (pos) => Math.max(0, Math.min((+pos || 1) - 1, Math.max(0, seqLen() - 1)));
+  const indexToPos = (idx) => idx + 1;
 
-  // Active sequence presented to the player:
-  //  - includeLeading3 = true  -> "3" + digits…
-  //  - includeLeading3 = false -> digits after the leading "3"
+  // Return "3" + decimals (no dot)
+  const getDigitsOnly = () => piFull.replace(/\D/g, "");
+
+  // Active sequence the player types:
   function ACTIVE_SEQ() {
-    const d = getDigitsOnly(); // starts with the leading "3"
+    const d = getDigitsOnly(); // begins with "3"
     return includeLeading3 ? d : d.slice(1);
   }
 
-  function clampStartAt() {
-    const max = Math.max(0, ACTIVE_SEQ().length - 1);
-    if (startAt < 1) startAt = 0;
-    if (startAt > max) startAt = max;
-  }
-
-  function loadStoredPi() {
-    const s = localStorage.getItem(STORAGE_KEYS.PI);
-    if (s && /^3\./.test(s)) {
-      piFull = s;
-      updateTargetCount();
-      return true;
-    }
-    return false;
-  }
-
-  function storePi() {
-    localStorage.setItem(STORAGE_KEYS.PI, piFull);
-  }
-
   function updateTargetCount() {
-    // Count of digits the user may type equals ACTIVE_SEQ().length
-    elTarget.textContent = ACTIVE_SEQ().length.toLocaleString();
-    elStartAt.max = ACTIVE_SEQ().length.toString();
+    const L = seqLen();
+    elTarget.textContent = L.toLocaleString();
+    elStartAt.max = String(L);
+    elStartAt.value = String(indexToPos(startAt));
   }
 
   function startTimerIfNeeded() {
@@ -186,7 +169,6 @@
       tick();
     }
   }
-
   function tick() {
     if (startTime === null) return;
     elapsed = (performance.now() - startTime) / 1000;
@@ -194,12 +176,6 @@
     const score = computeScore();
     elSPD.textContent = score > 0 ? (elapsed / score).toFixed(2) : "0.00";
     timerHandle = requestAnimationFrame(tick);
-  }
-
-  function stopTimer() {
-    if (timerHandle) cancelAnimationFrame(timerHandle);
-    timerHandle = null;
-    startTime = null;
   }
 
   function computeScore() {
@@ -217,8 +193,7 @@
     elapsed = 0;
     elTime.textContent = "0.0s";
     elSPD.textContent = "0.00";
-    if (!keepPi) { piFull = "3."; storePi(); }
-    clampStartAt();
+    if (!keepPi) { piFull = "3."; localStorage.setItem(STORAGE_KEYS.PI, piFull); }
     render();
     elEntry.value = "";
     elEntry.focus();
@@ -231,41 +206,43 @@
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
   }
 
-  // Save/Load progress now also stores includeLeading3
+  // ----- Robust parsing for any pi text -----
+  function parsePiText(txt) {
+    // remove all whitespace; find first "3." with following digits
+    const s = txt.replace(/\s+/g, "");
+    const m = s.match(/3\.\d{1,}/);
+    if (!m) throw new Error("No '3.' followed by digits found.");
+    const digitsOnly = m[0].replace(".", ""); // "3" + decimals
+    // Cap at leading 3 + 15000 decimals
+    const capped = digitsOnly.slice(0, 1 + 15000);
+    // Reassemble stored format "3.xxxxx"
+    return capped[0] + "." + capped.slice(1);
+  }
+
+  // Save/Load progress
   function saveProgress() {
-    const payload = {
-      piFull,
-      startAt,
-      input,
-      elapsed,
-      includeLeading3
-    };
+    const payload = { piFull, startAt, input, elapsed, includeLeading3 };
     localStorage.setItem(STORAGE_KEYS.SAVE, JSON.stringify(payload));
     flash(elSave, "Saved!");
   }
-
   function loadProgress() {
     const raw = localStorage.getItem(STORAGE_KEYS.SAVE);
     if (!raw) return flash(elLoad, "No save");
     try {
       const d = JSON.parse(raw);
-      if (d.piFull && /^3\./.test(d.piFull)) {
-        piFull = d.piFull;
-      }
+      if (d.piFull && /^3\./.test(d.piFull)) piFull = d.piFull;
       includeLeading3 = !!d.includeLeading3;
       startAt = Number.isFinite(+d.startAt) ? +d.startAt : 0;
       input   = Array.isArray(d.input) ? d.input : [];
       elapsed = +d.elapsed || 0;
-
       elInc3.checked = includeLeading3;
       updateTargetCount();
-      clampStartAt();
-      elStartAt.value = startAt;
+      elStartAt.value = String(indexToPos(startAt));
       elEntry.value = "";
       startTime = null;
       render();
       flash(elLoad, "Loaded!");
-    } catch(e) {
+    } catch (e) {
       alert("Failed to load save.");
     }
   }
@@ -275,17 +252,12 @@
     const raw = localStorage.getItem(STORAGE_KEYS.LB);
     return raw ? JSON.parse(raw) : [];
   }
-  function saveLB(list) {
-    localStorage.setItem(STORAGE_KEYS.LB, JSON.stringify(list));
-  }
+  function saveLB(list) { localStorage.setItem(STORAGE_KEYS.LB, JSON.stringify(list)); }
   function updateLBUI() {
     const list = loadLB();
     elLBList.innerHTML = "";
-    if (list.length === 0) {
-      const li = document.createElement('li');
-      li.textContent = "No scores yet.";
-      elLBList.appendChild(li);
-      return;
+    if (!list.length) {
+      const li = document.createElement('li'); li.textContent = "No scores yet."; elLBList.appendChild(li); return;
     }
     list.forEach((e, i) => {
       const li = document.createElement('li');
@@ -297,67 +269,46 @@
     const score = computeScore();
     const name = prompt("Name for the leaderboard:");
     if (!name) return;
-    const entry = {
-      name,
-      score,
-      time: elapsed,
-      date: new Date().toISOString().replace('T',' ').slice(0,19)
-    };
+    const entry = { name, score, time: elapsed, date: new Date().toISOString().replace('T',' ').slice(0,19) };
     const list = loadLB();
     list.push(entry);
     list.sort((a,b) => (b.score - a.score) || (a.time - b.time));
-    const trimmed = list.slice(0, MAX_LEAD);
-    saveLB(trimmed);
+    saveLB(list.slice(0, MAX_LEAD));
     updateLBUI();
     alert("Score submitted!");
   }
 
   // Rendering
   function render() {
-    // Score
-    const score = computeScore();
-    elScore.textContent = score;
-
-    // Display
+    elScore.textContent = computeScore();
     elDigits.innerHTML = "";
     if (!showDigits) return;
 
-    const seq = ACTIVE_SEQ();     // the sequence the user is typing
-    const visDot = '.';           // we’ll visually insert one dot after the first digit if includeLeading3
+    const seq = ACTIVE_SEQ();
+    const tgtSlice = seq.slice(startAt);
 
     let colCount = 0;
-    // draw all typed chars so far (colored)
-    // we also show a faint context around them if needed — to keep it fast, we only render the typed part + spaces/newlines
-    const tgtSlice = seq.slice(startAt);
     input.forEach((ch, i) => {
       const sp = document.createElement('span');
       sp.className = "d " + (ch === tgtSlice[i] ? "ok" : "bad");
       sp.textContent = ch;
       sp.dataset.i = i.toString();
-      sp.title = `Digit #${startAt + i + 1}`;
+      // FIX: show true 1-based position
+      sp.title = `Position #${indexToPos(startAt + i)}`;
       elDigits.appendChild(sp);
 
       colCount++;
       if (colCount % SPACE_EVERY === 0) {
-        const s = document.createElement('span');
-        s.className = "sp";
-        s.textContent = " ";
-        elDigits.appendChild(s);
+        const s = document.createElement('span'); s.className = "sp"; s.textContent = " "; elDigits.appendChild(s);
       }
       if (colCount % MAX_PER_LINE === 0) {
-        const nl = document.createElement('span');
-        nl.className = "nl";
-        elDigits.appendChild(nl);
+        const nl = document.createElement('span'); nl.className = "nl"; elDigits.appendChild(nl);
       }
 
-      // If we typed the very first digit of the full number (i.e., global index 0) and includeLeading3 is ON,
-      // visually show a muted decimal point right after it (only for the “global” first digit).
+      // visually show '.' after the global first digit when includeLeading3 is ON
       const globalIndex = startAt + i;
       if (includeLeading3 && globalIndex === 0) {
-        const dot = document.createElement('span');
-        dot.className = "d muted";
-        dot.textContent = visDot;
-        elDigits.appendChild(dot);
+        const dot = document.createElement('span'); dot.className = "d muted"; dot.textContent = '.'; elDigits.appendChild(dot);
       }
     });
   }
@@ -376,24 +327,15 @@
   // Entry handling
   elEntry.addEventListener('keydown', (e) => {
     if (e.key === "Backspace") {
-      if (input.length > 0) {
-        input.pop();
-        render();
-      }
-      e.preventDefault();
-      return;
+      if (input.length > 0) { input.pop(); render(); }
+      e.preventDefault(); return;
     }
     if (/^\d$/.test(e.key)) {
       startTimerIfNeeded();
       const tgt = ACTIVE_SEQ().slice(startAt);
-      if (input.length < tgt.length) {
-        input.push(e.key);
-        render();
-      }
-      e.preventDefault();
-      return;
+      if (input.length < tgt.length) { input.push(e.key); render(); }
+      e.preventDefault(); return;
     }
-    // Ignore other keys, but allow arrow/home/end for cursor in the box
   });
 
   // Controls
@@ -402,14 +344,13 @@
     elToggle.textContent = showDigits ? "Hide Digits" : "Show Digits";
     render();
   });
-
   elSave.addEventListener('click', saveProgress);
   elLoad.addEventListener('click', loadProgress);
   elReset.addEventListener('click', () => { resetGame(true); });
   elSubmit.addEventListener('click', submitScore);
 
   elStartAt.addEventListener('change', () => {
-    startAt = Math.max(0, Math.min(ACTIVE_SEQ().length, parseInt(elStartAt.value || "0", 10)));
+    startAt = posToIndex(elStartAt.value);
     input = [];
     render();
     elEntry.value = "";
@@ -417,114 +358,87 @@
   });
 
   elInc3.addEventListener('change', () => {
+    const currentPos = indexToPos(startAt); // remember visible position (1-based)
     includeLeading3 = elInc3.checked;
-    // adjust startAt to keep pointing at the “same” absolute digit where possible
-    // If turning OFF include3, we effectively shift sequence left by 1; clamp to new bounds
-    clampStartAt();
-    elStartAt.value = startAt;
-    input = [];
     updateTargetCount();
+    startAt = posToIndex(currentPos);
+    input = [];
+    elStartAt.value = String(indexToPos(startAt));
     render();
     elEntry.focus();
   });
 
-  // Load π from local file (.txt with "3.14159...")
+  // Load from local file
   elFile.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const txt = await file.text();
-    const clean = txt.replace(/\s+/g, "");
-    if (!/^3\./.test(clean)) { alert("File must start with '3.'"); return; }
-    if (clean.length < 3) { alert("File looks empty."); return; }
-    // Cap at "3." + 15000 digits -> length 15002 incl dot
-    const onlyDigits = clean.replace(/\D/g, "");
-    const cappedDigits = onlyDigits.slice(0, 1 + 15000); // leading 3 + 15000 decimals
-    // rebuild piFull with a dot after the first digit
-    piFull = cappedDigits[0] + "." + cappedDigits.slice(1);
-    storePi();
-    updateTargetCount();
-    input = [];
-    clampStartAt();
-    elStartAt.value = startAt;
-    render();
-    elEntry.focus();
-  });
-
-  // Demo button (first ~1000 digits total including the leading 3)
-  elUseDemo.addEventListener('click', () => {
-    const demo =
-      "3."
-      + "14159265358979323846264338327950288419716939937510"
-      + "58209749445923078164062862089986280348253421170679"
-      + "82148086513282306647093844609550582231725359408128"
-      + "48111745028410270193852110555964462294895493038196"
-      + "44288109756659334461284756482337867831652712019091"
-      + "45648566923460348610454326648213393607260249141273"
-      + "72458700660631558817488152092096282925409171536436"
-      + "78925903600113305305488204665213841469519415116094"
-      + "33057270365759591953092186117381932611793105118548"
-      + "07446237996274956735188575272489122793818301194912";
-    // sanitize to the storage format (rebuild around the dot)
-    const only = demo.replace(/\D/g, "");
-    piFull = only[0] + "." + only.slice(1);
-    storePi();
-    updateTargetCount();
-    input = [];
-    clampStartAt();
-    elStartAt.value = startAt;
-    render();
-    elEntry.focus();
-  });
-
-  // --- NEW: Load pi_15000.txt from GitHub repo (relative) or from a pasted raw URL ---
-  async function loadPiFromUrl(url) {
+    const file = e.target.files?.[0]; if (!file) return;
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const txt = await res.text();
-      const clean = txt.replace(/\s+/g, "");
-      if (!/^3\./.test(clean)) { alert("File must start with '3.'"); return; }
-      const only = clean.replace(/\D/g, "");
-      const capped = only.slice(0, 1 + 15000); // 3 + 15000
-      piFull = capped[0] + "." + capped.slice(1);
-      storePi();
+      const txt = await file.text();
+      piFull = parsePiText(txt);
+      localStorage.setItem(STORAGE_KEYS.PI, piFull);
       updateTargetCount();
       input = [];
-      clampStartAt();
-      elStartAt.value = startAt;
+      startAt = 0;
+      elStartAt.value = "1";
+      render();
+      elEntry.focus();
+    } catch (err) {
+      alert("Could not parse the file: " + err.message);
+    }
+  });
+
+  // Demo (~1000 digits, compact one-liner)
+  elUseDemo.addEventListener('click', () => {
+    const demo = "3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862803482534211706798214808651328230664709384460955058223172535940812848111745028410270193852110555964462294895493038196442881097566593344612847564823378678316527120190914564856692346034861045432664821339360726024914127372458700660631558817488152092096282925409171536436789259036001133053054882046652138414695194151160943305727036575959195309218611738193261179310511854807446237996274956735188575272489122793818301194912";
+    piFull = parsePiText(demo);
+    localStorage.setItem(STORAGE_KEYS.PI, piFull);
+    updateTargetCount();
+    input = [];
+    startAt = 0;
+    elStartAt.value = "1";
+    render();
+    elEntry.focus();
+  });
+
+  // Load pi_15000.txt from same folder (cache-busted)
+  async function loadPiFromUrl(url) {
+    try {
+      const bust = url + (url.includes("?") ? "&" : "?") + "_cb=" + Date.now();
+      const res = await fetch(bust, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const txt = await res.text();
+      piFull = parsePiText(txt);
+      localStorage.setItem(STORAGE_KEYS.PI, piFull);
+      updateTargetCount();
+      input = [];
+      startAt = 0;
+      elStartAt.value = "1";
       render();
       elEntry.focus();
       flash(elLoadRepo, "Loaded!");
     } catch (err) {
-      alert("Failed to fetch pi file.\n" + err);
+      alert("Failed to fetch pi_15000.txt: " + err.message);
     }
   }
-
-  // Relative fetch (works on GitHub Pages if pi_15000.txt is in the same folder)
-  elLoadRepo.addEventListener('click', () => {
-    loadPiFromUrl("pi_15000.txt");
-  });
-
-  // Paste a full raw URL and press Enter
+  elLoadRepo.addEventListener('click', () => loadPiFromUrl("pi_15000.txt"));
   elGhUrl.addEventListener('keydown', (e) => {
     if (e.key === "Enter") {
-      const u = elGhUrl.value.trim();
-      if (!u) return;
+      const u = elGhUrl.value.trim(); if (!u) return;
       loadPiFromUrl(u);
     }
   });
 
   // Init
-  loadStoredPi();       // load last π if stored
+  const stored = localStorage.getItem(STORAGE_KEYS.PI);
+  if (stored && /^3\./.test(stored)) piFull = stored;
   updateTargetCount();
   updateLBUI();
   elInc3.checked = includeLeading3;
-  clampStartAt();
-  elStartAt.value = startAt;
+  elStartAt.value = "1";
   render();
   elEntry.focus();
 })();
 </script>
+
 
 <script>
 if ("serviceWorker" in navigator) {
