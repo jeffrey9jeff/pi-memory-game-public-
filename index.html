@@ -420,12 +420,30 @@
     }
   }
   elLoadRepo.addEventListener('click', () => loadPiFromUrl("pi_15000.txt"));
-  elGhUrl.addEventListener('keydown', (e) => {
-    if (e.key === "Enter") {
-      const u = elGhUrl.value.trim(); if (!u) return;
-      loadPiFromUrl(u);
+  // --- Helper to convert GitHub "blob" links into RAW links ---
+function toRawUrl(u) {
+  try {
+    const url = new URL(u, location.href);
+    if (url.hostname === "github.com" && url.pathname.includes("/blob/")) {
+      url.hostname = "raw.githubusercontent.com";
+      url.pathname = url.pathname.replace("/blob/", "/");
+      url.search = ""; // strip ?plain=1 etc
     }
-  });
+    return url.toString();
+  } catch {
+    return u;
+  }
+}
+
+// --- URL box: accept raw URLs OR blob links ---
+elGhUrl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    let u = elGhUrl.value.trim();
+    if (!u) return;
+    u = toRawUrl(u);
+    loadPiFromUrl(u);
+  }
+});
 
   // Init
   const stored = localStorage.getItem(STORAGE_KEYS.PI);
@@ -439,6 +457,42 @@
 })();
 </script>
 
+  // ... rest of your game code above ...
+
+  // Init
+  const stored = localStorage.getItem(STORAGE_KEYS.PI);
+  if (stored && /^3\./.test(stored)) piFull = stored;
+  updateTargetCount();
+  updateLBUI();
+  elInc3.checked = includeLeading3;
+  elStartAt.value = "1";
+  render();
+  elEntry.focus();
+})();
+
+// --- Helper to fix GitHub blob URLs ---
+function toRawUrl(u) {
+  try {
+    const url = new URL(u, location.href);
+    if (url.hostname === "github.com" && url.pathname.includes("/blob/")) {
+      url.hostname = "raw.githubusercontent.com";
+      url.pathname = url.pathname.replace("/blob/", "/");
+      url.search = "";
+    }
+    return url.toString();
+  } catch { return u; }
+}
+
+// Replace the listener here
+elGhUrl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    let u = elGhUrl.value.trim();
+    if (!u) return;
+    u = toRawUrl(u);
+    loadPiFromUrl(u);
+  }
+});
+</script>
 
 <script>
 if ("serviceWorker" in navigator) {
