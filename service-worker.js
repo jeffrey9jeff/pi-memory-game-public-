@@ -1,5 +1,5 @@
 // service-worker.js
-const CACHE_NAME = "pi-memory-v3";
+const CACHE_NAME = "pi-memory-v4";
 const ASSETS = [
   "./",
   "./index.html",
