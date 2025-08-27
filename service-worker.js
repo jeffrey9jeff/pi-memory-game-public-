@@ -1,5 +1,5 @@
 // service-worker.js
-const CACHE_NAME = "pi-memory-v1";
+const CACHE_NAME = "pi-memory-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,9 +11,7 @@ const ASSETS = [
 
 // Install: pre-cache app shell
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
   self.skipWaiting();
 });
 
@@ -27,22 +25,29 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: cache-first for app shell, network fallback
+// Fetch
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  // Only cache GETs
   if (req.method !== "GET") return;
+  const url = new URL(req.url);
+
+  // Never cache raw data files like pi_15000.txt
+  if (url.pathname.endsWith(".txt")) {
+    event.respondWith(fetch(req).catch(() => caches.match("./index.html")));
+    return;
+  }
+
+  // Cache-first for app shell; network fallback and cache the result
   event.respondWith(
     caches.match(req).then((hit) => {
       if (hit) return hit;
       return fetch(req).then((res) => {
-        // Optionally cache new GET responses from same-origin
         const copy = res.clone();
-        if (req.url.startsWith(self.location.origin)) {
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        if (url.origin === self.location.origin) {
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         }
         return res;
-      }).catch(() => caches.match("./index.html")); // fallback
+      }).catch(() => caches.match("./index.html"));
     })
   );
 });
